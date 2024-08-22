@@ -28,7 +28,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import pub.mapper.ParseMapper;
 
-public class PubmedDataToMysql_Atomic {
+public class PubmedDataToMysql_Multithread {
 
 	private static final Logger logger = LoggerFactory.getLogger(PubmedDataToMysql.class);
 //    private static final String ERROR_DIR = "/home/mediazen/kbds_pubmed/java_jar/java_config/error_dir";

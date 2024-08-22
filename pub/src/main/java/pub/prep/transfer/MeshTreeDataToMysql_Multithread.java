@@ -26,7 +26,7 @@ import org.w3c.dom.NodeList;
 
 import pub.mapper.ParseMapper;
 
-public class MeshTreeDataToMysql_Atomic {
+public class MeshTreeDataToMysql_Multithread {
 
 	private static SqlSessionFactory sqlSessionFactory;
 
