@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="pub.mapper.ParseMapper">
+
+    <!-- 시퀀스 값을 가져오는 쿼리 -->
+    <select id="getNextAuthorNo" resultType="int">
+        SELECT NEXT VALUE FOR author_no_seq
+    </select>
+
+    <select id="getNextAffiliationNo" resultType="int">
+        SELECT NEXT VALUE FOR affiliation_no_seq
+    </select>
+
+    <select id="getNextRefNo" resultType="int">
+        SELECT NEXT VALUE FOR ref_no_seq
+    </select>
+
+    <select id="getNextDescriptorIndex" resultType="int">
+        SELECT NEXT VALUE FOR descriptor_index
+    </select>
+    
+    <select id="getNextKeywordIndex" resultType="int">
+        SELECT NEXT VALUE FOR keyword_index
+    </select>
+    
+    <!-- insert시작 -->
+
+    <insert id="insertPmidList" parameterType="int">
+        INSERT INTO pub_pmid_list (pmid)
+        VALUES (#{pmid})
+    </insert>
+
+    <insert id="insertPubdate" parameterType="map">
+        INSERT INTO pub_pubdate (pmid, year, month, day)
+        VALUES (#{pmid}, #{year}, #{month}, #{day})
+    </insert>
+
+    <insert id="insertArticleTitle" parameterType="map">
+        INSERT INTO pub_article_title (pmid, article_title)
+        VALUES (#{pmid}, #{articleTitle})
+    </insert>
+
+    <insert id="insertAuthor" parameterType="map">
+        INSERT INTO pub_author (pmid, author_no, valid_yn, lastname, forename, collectivename, initials, suffix, identifier_source, identifier)
+        VALUES (#{pmid}, #{authorNo}, #{validYn}, #{lastname}, #{forename}, #{collectivename}, #{initials}, #{suffix}, #{identifierSource}, #{identifier})
+    </insert>
+
+    <insert id="insertAffiliation" parameterType="map">
+        INSERT INTO pub_affiliation (pmid, affiliation_no, affiliation, affiliation_country, affiliation_organization, affiliation_identifier_source, affiliation_identifier)
+        VALUES (#{pmid}, #{affiliationNo}, #{affiliation}, #{affiliationCountry}, #{affiliationOrganization}, #{affiliationIdentifierSource}, #{affiliationIdentifier})
+    </insert>
+
+    <insert id="insertAuthorAffiliation" parameterType="map">
+        INSERT INTO pub_author_affiliation (pmid, author_no, affiliation_no)
+        VALUES (#{pmid}, #{authorNo}, #{affiliationNo})
+    </insert>
+
+    <insert id="insertDatabankList" parameterType="map">
+        INSERT INTO pub_databank_list (pmid, databank_list_complete_yn, databank_name, accession_number)
+        VALUES (#{pmid}, #{databankListCompleteYn}, #{databankName}, #{accessionNumber})
+    </insert>
+
+    <insert id="insertJournal" parameterType="map">
+        INSERT INTO pub_journal (pmid, title, iso_abbreviation, volume, issue, pub_year, pub_month, pub_day)
+        VALUES (#{pmid}, #{title}, #{isoAbbreviation}, #{volume}, #{issue}, #{pubYear}, #{pubMonth}, #{pubDay})
+    </insert>
+
+    <insert id="insertKeywordList" parameterType="map">
+        INSERT INTO pub_keyword_list (keyword_index, pmid, keyword, keyword_major_topic_yn)
+        VALUES (#{keyword_index}, #{pmid}, #{keyword}, #{keywordMajorTopicYn})
+    </insert>
+
+    <insert id="insertReference" parameterType="map">
+        INSERT INTO pub_reference (pmid, ref_no, citation, ref_article_id_pubmed, ref_article_id_doi, ref_article_id_pmcid, ref_article_id_pii)
+        VALUES (#{pmid}, #{refNo}, #{citation}, #{refArticleIdPubmed}, #{refArticleIdDoi}, #{refArticleIdPmcid}, #{refArticleIdPii})
+    </insert>
+
+    <insert id="insertMeshHeading" parameterType="map">
+        INSERT INTO pub_mesh_heading (pmid, descriptor_index, descriptor_name, descriptor_major_topic_yn, descriptor_type, descriptor_ui, qualifier_name, qualifer_major_topic_yn, qualifier_ui)
+        VALUES (#{pmid}, #{descriptorIndex}, #{descriptorName}, #{descriptorMajorTopicYn}, #{descriptorType}, #{descriptorUi}, #{qualifierName}, #{qualifierMajorTopicYn}, #{qualifierUi})
+    </insert>
+
+    <insert id="insertMeshDescList" parameterType="map">
+        INSERT INTO pub_mesh_desc_list (descriptor_ui, descriptor_name)
+        VALUES (#{descriptorUi}, #{descriptorName})
+    </insert>
+
+    <insert id="insertMeshTrees" parameterType="map">
+        INSERT INTO pub_mesh_trees (descriptor_ui, mesh_tree, mesh_category)
+        VALUES (#{descriptorUi}, #{meshTree}, #{meshCategory})
+    </insert>
+
+</mapper>
