@@ -119,45 +119,59 @@ public class PubmedDataToMysql_Multithread {
             return false; // Skip
         }
 
+        boolean isValidYear = false;
+
         try (SqlSession session = sqlSessionFactory.openSession()) {
             ParseMapper mapper = session.getMapper(ParseMapper.class);
 
             int pmid = rootNode.path("MedlineCitation").path("PMID").path("value").asInt();
 
-            mapper.insertPmidList(pmid);
+            // Check if there are any PubDate entries with year >= 2014
+            isValidYear = insertPubDate(mapper, rootNode, pmid);
 
-            insertPubDate(mapper, rootNode, pmid);
-            insertArticleTitle(mapper, rootNode, pmid);
-            insertAuthors(mapper, rootNode, pmid);
-            insertJournal(mapper, rootNode, pmid);
-            insertMeshHeadings(mapper, rootNode, pmid);
-            insertReferences(mapper, rootNode, pmid);
-            insertDatabankList(mapper, rootNode, pmid);
-            insertKeywordList(mapper, rootNode, pmid);
+            if (isValidYear) {
+                // Insert PMID into the database
+                mapper.insertPmidList(pmid);
 
-            session.commit();
+                insertArticleTitle(mapper, rootNode, pmid);
+                insertAuthors(mapper, rootNode, pmid);
+                insertJournal(mapper, rootNode, pmid);
+                insertMeshHeadings(mapper, rootNode, pmid);
+                insertReferences(mapper, rootNode, pmid);
+                insertDatabankList(mapper, rootNode, pmid);
+                insertKeywordList(mapper, rootNode, pmid);
+
+                session.commit();
+            } else {
+                logger.info("Skipping file due to PubDate year not being >= 2014");
+            }
         } catch (Exception e) {
             logger.error("Database error occurred while processing file: {}", jsonFilePath, e);
             moveFileToErrorDir(jsonFilePath, "PersistenceException");
             return false;
         }
 
-        return true;
+        return isValidYear;
     }
 
-    private static void insertPubDate(ParseMapper mapper, JsonNode rootNode, int pmid) {
+    private static boolean insertPubDate(ParseMapper mapper, JsonNode rootNode, int pmid) {
         JsonNode pubDateNode = rootNode.path("PubmedData").path("History").path("PubMedPubDate");
+        boolean inserted = false;
         for (JsonNode dateNode : pubDateNode) {
             if ("pubmed".equals(dateNode.path("PubStatus").asText())) {
-                Map<String, Object> params = new HashMap<>();
-                params.put("pmid", pmid);
-                params.put("year", dateNode.path("Year").path("value").asInt());
-                params.put("month", dateNode.path("Month").path("value").asInt());
-                params.put("day", dateNode.path("Day").path("value").asInt());
-                mapper.insertPubdate(params);
-                break;
+                int year = dateNode.path("Year").path("value").asInt();
+                if (year >= 2014) {
+                    Map<String, Object> params = new HashMap<>();
+                    params.put("pmid", pmid);
+                    params.put("year", year);
+                    params.put("month", dateNode.path("Month").path("value").asInt());
+                    params.put("day", dateNode.path("Day").path("value").asInt());
+                    mapper.insertPubdate(params);
+                    inserted = true;
+                }
             }
         }
+        return inserted;
     }
 
     private static void insertArticleTitle(ParseMapper mapper, JsonNode rootNode, int pmid) {
