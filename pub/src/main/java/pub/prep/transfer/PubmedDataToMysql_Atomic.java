@@ -10,79 +10,112 @@ import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.apache.ibatis.session.SqlSessionFactoryBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import pub.mapper.ParseMapper;
 
-public class PubmedDataToMysql {
+public class PubmedDataToMysql_Atomic {
+
+	private static final Logger logger = LoggerFactory.getLogger(PubmedDataToMysql.class);
+//    private static final String ERROR_DIR = "/home/mediazen/kbds_pubmed/java_jar/java_config/error_dir";
+	private static final String ERROR_DIR = "/home/mediazen/kbds_pubmed/java_jar/java_config/error2_dir";
 
     private static SqlSessionFactory sqlSessionFactory;
 
     public static void main(String[] args) {
-//        String resource = "D:\\xml-mybatis-config.xml";
-//        String directoryPath = "C:\\Users\\mediazen0\\Desktop\\json\\json_prep_6_5";
         String resource = "/home/mediazen/kbds_pubmed/java_jar/java_config/xml-mybatis-config.xml";
         String directoryPath = args[0];
+//      String resource = "D:\\xml-mybatis-config.xml";
+//      String directoryPath = "C:\\Users\\mediazen0\\Desktop\\JSON_PREP";
 
-        try {
-            InputStream inputStream = new FileInputStream(resource);
+        try (InputStream inputStream = new FileInputStream(resource)) {
             sqlSessionFactory = new SqlSessionFactoryBuilder().build(inputStream);
             processJsonFilesInDirectory(directoryPath);
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.error("Failed to initialize SQL Session Factory", e);
         }
     }
 
     public static void processJsonFilesInDirectory(String directoryPath) throws IOException {
         List<File> jsonFiles = findJsonFiles(directoryPath);
         int totalFiles = jsonFiles.size();
-        int fileCount = 0;
+
+        // 사용 가능한 프로세서 수에 기반한 스레드 풀 생성
+        int nThreads = Runtime.getRuntime().availableProcessors();
+        ExecutorService executorService = Executors.newFixedThreadPool(nThreads);
+        final AtomicInteger fileCount = new AtomicInteger(0);
 
         for (File jsonFile : jsonFiles) {
-            fileCount++;
-            System.out.println("■ 진행 상태 : " + fileCount + "번째 진행 중 ■ 전체 파일수 : " + totalFiles + " ■ 파일명 " + jsonFile.getName());
-            System.out.println("■■■■■■■■■■■■■■■■■파일명 : " + jsonFile.getName() + "■■■■■■■■■■■■■■■■■");
+            executorService.submit(() -> {
+                int currentCount = fileCount.incrementAndGet();
+                logger.info("Processing file {} of {}: {}", currentCount, totalFiles, jsonFile.getName());
 
-            if (!processJsonFile(jsonFile.getAbsolutePath())) {
-                System.out.println("### 파일 스킵: country_code가 없으므로 전체 데이터 건너뜀.");
-            }
+                if (!processJsonFile(jsonFile.getAbsolutePath())) {
+                    logger.info("Skipping file due to missing country code or institution name: {}", jsonFile.getName());
+                }
+            });
+        }
+
+        executorService.shutdown();
+        try {
+            executorService.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+        } catch (InterruptedException e) {
+            logger.error("ExecutorService was interrupted", e);
         }
     }
 
-    public static boolean processJsonFile(String jsonFilePath) throws IOException {
+    public static boolean processJsonFile(String jsonFilePath) {
         ObjectMapper objectMapper = new ObjectMapper();
-        JsonNode rootNode = objectMapper.readTree(new File(jsonFilePath));
+        JsonNode rootNode;
+        try {
+            rootNode = objectMapper.readTree(new File(jsonFilePath));
+        } catch (IOException e) {
+            logger.error("Failed to read JSON file: {}", jsonFilePath, e);
+            moveFileToErrorDir(jsonFilePath, "IOException");
+            return false;
+        }
 
         JsonNode authorsNode = rootNode.path("MedlineCitation").path("Article").path("AuthorList").path("Author");
         boolean hasCountryCode = false;
         boolean hasInstitutionName = false;
 
         for (JsonNode authorNode : authorsNode) {
-            JsonNode affiliationNode = authorNode.path("AffiliationInfo").path("Affiliation");
-            JsonNode institutionNode = authorNode.path("AffiliationInfo").path("institution_name");
+            JsonNode affiliationInfoNode = authorNode.path("AffiliationInfo");
 
-            if (!affiliationNode.isMissingNode()) {
-                String countryCode = authorNode.path("AffiliationInfo").path("country_code").asText().trim();
-                if (!countryCode.isEmpty()) {
-                    hasCountryCode = true;
-                }
+            if (affiliationInfoNode.isMissingNode()) {
+                continue; // Skip
+            }
 
-                String institutionName = institutionNode.asText().trim();
-                if (!institutionName.isEmpty()) {
-                    hasInstitutionName = true;
-                }
+            JsonNode countryCodeNode = affiliationInfoNode.path("country_code");
+            JsonNode institutionNameNode = affiliationInfoNode.path("institution_name");
+
+            String countryCode = countryCodeNode.isMissingNode() ? "" : countryCodeNode.asText().trim();
+            String institutionName = institutionNameNode.isMissingNode() ? "" : institutionNameNode.asText().trim();
+
+            if (!countryCode.isEmpty()) {
+                hasCountryCode = true;
+            }
+            if (!institutionName.isEmpty()) {
+                hasInstitutionName = true;
             }
         }
 
         if (!hasCountryCode || !hasInstitutionName) {
+            logger.info("Skipping file due to missing country code or institution name");
             return false; // Skip
         }
 
@@ -103,6 +136,10 @@ public class PubmedDataToMysql {
             insertKeywordList(mapper, rootNode, pmid);
 
             session.commit();
+        } catch (Exception e) {
+            logger.error("Database error occurred while processing file: {}", jsonFilePath, e);
+            moveFileToErrorDir(jsonFilePath, "PersistenceException");
+            return false;
         }
 
         return true;
@@ -132,12 +169,11 @@ public class PubmedDataToMysql {
 
     private static void insertAuthors(ParseMapper mapper, JsonNode rootNode, int pmid) {
         JsonNode authorListNode = rootNode.path("MedlineCitation").path("Article").path("AuthorList").path("Author");
-        int authorNo = mapper.getNextAuthorNo();
-        int affiliationNo = 0;
         for (JsonNode authorNode : authorListNode) {
+        	int authorNo = mapper.getNextAuthorNo();
             Map<String, Object> params = new HashMap<>();
             params.put("pmid", pmid);
-            params.put("authorNo", authorNo++);
+            params.put("authorNo", authorNo);
             params.put("validYn", authorNode.path("ValidYN").asText());
             params.put("lastname", authorNode.path("LastName").path("value").asText());
             params.put("forename", authorNode.path("ForeName").path("value").asText());
@@ -151,7 +187,7 @@ public class PubmedDataToMysql {
             JsonNode affiliationNode = authorNode.path("AffiliationInfo").path("Affiliation");
             if (!affiliationNode.isMissingNode()) {
                 Map<String, Object> affParams = new HashMap<>();
-                affiliationNo = mapper.getNextAffiliationNo();
+                int affiliationNo = mapper.getNextAffiliationNo();
                 affParams.put("pmid", pmid);
                 affParams.put("affiliationIdentifier", authorNode.path("Identifier").path("value").asText());
                 affParams.put("affiliationIdentifierSource", authorNode.path("Identifier").path("Source").asText());
@@ -186,7 +222,7 @@ public class PubmedDataToMysql {
     }
 
     private static void insertMeshHeadings(ParseMapper mapper, JsonNode rootNode, int pmid) {
-    	JsonNode meshHeadingListNode = rootNode.path("MedlineCitation").path("MeshHeadingList").path("MeshHeading");
+        JsonNode meshHeadingListNode = rootNode.path("MedlineCitation").path("MeshHeadingList").path("MeshHeading");
         for (JsonNode meshHeadingNode : meshHeadingListNode) {
             Map<String, Object> params = new HashMap<>();
             int descriptorIndex = mapper.getNextDescriptorIndex();
@@ -208,10 +244,10 @@ public class PubmedDataToMysql {
     }
 
     private static void insertReferences(ParseMapper mapper, JsonNode rootNode, int pmid) {
-    	JsonNode referenceListNode = rootNode.path("PubmedData").path("ReferenceList").path("Reference");
+        JsonNode referenceListNode = rootNode.path("PubmedData").path("ReferenceList").path("Reference");
 
         for (JsonNode referenceNode : referenceListNode) {
-        	int refNo = mapper.getNextRefNo();
+            int refNo = mapper.getNextRefNo();
             Map<String, Object> params = new HashMap<>();
             params.put("pmid", pmid);
             params.put("refNo", refNo);
@@ -269,13 +305,13 @@ public class PubmedDataToMysql {
         JsonNode databankListNode = rootNode.path("MedlineCitation").path("Article").path("DataBankList");
         String completeYn = databankListNode.path("CompleteYN").asText();
         JsonNode databanks = databankListNode.path("DataBank");
-        
+
         for (JsonNode databank : databanks) {
             Map<String, Object> params = new HashMap<>();
             params.put("pmid", pmid);
             params.put("databankListCompleteYn", completeYn);
             params.put("databankName", databank.path("DataBankName").asText());
-            
+
             JsonNode accessionNumbers = databank.path("AccessionNumberList").path("AccessionNumber");
             for (JsonNode accessionNumber : accessionNumbers) {
                 params.put("accessionNumber", accessionNumber.asText());
@@ -300,9 +336,21 @@ public class PubmedDataToMysql {
     public static List<File> findJsonFiles(String directoryPath) throws IOException {
         try (Stream<Path> paths = Files.walk(Paths.get(directoryPath))) {
             return paths.filter(Files::isRegularFile)
-                        .filter(path -> path.toString().endsWith(".json"))
-                        .map(Path::toFile)
-                        .collect(Collectors.toList());
+                    .filter(path -> path.toString().endsWith(".json"))
+                    .map(Path::toFile)
+                    .collect(Collectors.toList());
+        }
+    }
+
+    private static void moveFileToErrorDir(String filePath, String errorType) {
+        Path sourcePath = Paths.get(filePath);
+        Path targetPath = Paths.get(ERROR_DIR, sourcePath.getFileName().toString());
+
+        try {
+            Files.move(sourcePath, targetPath);
+            logger.info("Moved file {} to error directory due to {}", filePath, errorType);
+        } catch (IOException e) {
+            logger.error("Failed to move file {} to error directory", filePath, e);
         }
     }
 }

@@ -10,6 +10,7 @@ import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -25,12 +26,12 @@ import org.w3c.dom.NodeList;
 
 import pub.mapper.ParseMapper;
 
-public class MeshTreeDataToMysql {
+public class MeshTreeDataToMysql_Atomic {
 
 	private static SqlSessionFactory sqlSessionFactory;
 
     public static void main(String[] args) {
-        String resource = "D:\\mybatis-config.xml";
+        String resource = "D:\\xml-mybatis-config.xml";
         String directoryPath = "D:\\pubmed_xml\\MeSH\\desc2024";
 
         try {
@@ -45,13 +46,17 @@ public class MeshTreeDataToMysql {
     public static void processXmlFilesInDirectory(String directoryPath) throws Exception {
         List<File> xmlFiles = findXmlFiles(directoryPath);
         int totalFiles = xmlFiles.size();
-        int fileCount = 0;
+        AtomicInteger fileCount = new AtomicInteger(0);
 
-        for (File xmlFile : xmlFiles) {
-            fileCount++;
-            System.out.println("■ 진행 상태 : " + fileCount + "번째 진행 중 ■ 전체 파일수 : " + totalFiles + " ■ 파일명 " + xmlFile.getName());
-            processXmlFile(xmlFile.getAbsolutePath());
-        }
+        xmlFiles.parallelStream().forEach(xmlFile -> {
+            try {
+                int currentCount = fileCount.incrementAndGet();
+                System.out.println("■ 진행 상태 : " + currentCount + "번째 진행 중 ■ 전체 파일수 : " + totalFiles + " ■ 파일명 " + xmlFile.getName());
+                processXmlFile(xmlFile.getAbsolutePath());
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
     }
 
     public static void processXmlFile(String xmlFilePath) throws Exception {
@@ -62,7 +67,7 @@ public class MeshTreeDataToMysql {
         doc.getDocumentElement().normalize();
 
         try (SqlSession session = sqlSessionFactory.openSession()) {
-            ParseMapper mapper = session.getMapper(ParseMapper.class);
+        	ParseMapper mapper = session.getMapper(ParseMapper.class);
 
             // Get all DescriptorRecord elements
             NodeList descriptorRecords = doc.getElementsByTagName("DescriptorRecord");

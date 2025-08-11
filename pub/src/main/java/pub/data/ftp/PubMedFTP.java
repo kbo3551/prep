@@ -19,7 +19,7 @@ public class PubMedFTP {
 
 //    String remoteDirPath = "/pubmed/baseline/";
     String remoteDirPath = "/pubmed/updatefiles/";
-    String saveDirPath = "D:/pubmed_xml/pubmed/Update Data/pubmed/";
+    String saveDirPath = "C:/pubmed/";
 
       try {
           downloadFilesFromFTP(server, port, user, pass, remoteDirPath, saveDirPath);

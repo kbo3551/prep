@@ -3,9 +3,14 @@ package pub.data.ftp;
 import java.io.File;
 
 public class Md5FileDelete {
-
+/**
+ *         String remoteDirPath = "/pubmed/updatefiles/";
+//        String remoteDirPath = "/pubmed/baseline/";
+        String saveDirPath = "C:/pubmed/update/";      
+ * @param args
+ */
   public static void main(String[] args) {
-    String directoryPath = "D:/pubmed/";
+    String directoryPath = "C:/pubmed/";
     
     deleteMd5Files(directoryPath);
   }
@@ -18,7 +23,7 @@ public class Md5FileDelete {
   
           if (files != null) {
               for (File file : files) {
-                  if (file.isFile() && file.getName().endsWith(".md5")) {
+                  if (file.isFile() && file.getName().endsWith(".txt")) {
                       // 파일 삭제
                       if (file.delete()) {
                           System.out.println("Deleted: " + file.getName());
